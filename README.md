@@ -12,6 +12,8 @@ As shown, the image breaks down the whole deployment process into node, network,
 
 ## Node requirements
 
+The documentation for the node requirements can be found [here](docs/node-requirements.md).
+
 ## Network requirements
 
 ## Services' requirements
