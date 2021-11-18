@@ -31,9 +31,17 @@ Vagrant.configure("2") do |config|
   end
 
   # network requirements
-  config.vm.provision "network", type: "shell", path: "hacks/2_network_reqs.sh"
+  config.vm.provision "ansible" do |ansible|
+    ansible.playbook = "automation/network-requirements.yml"
+    ansible.extra_vars = {
+        bastion_nic: "eth0",
+        bastion_ipv6_mask: "64",
+        bastion_ipv6_ip: "cafe:8a::5",
+        bastion_ipv6_cidr: "cafe:8a::/64",
+        bastion_cluster_network: "baremetal"
+    }
+  end
 
   # helper service's requirements
-  config.vm.provision "services", type: "shell", path: "hacks/3_services_reqs.sh"
 
 end
