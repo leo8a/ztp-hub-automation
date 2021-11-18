@@ -1,0 +1,10 @@
+# folders
+.vagrant
+.idea
+*/backup
+binaries
+
+# files
+*.log
+Vagranfile
+pull_secret.json
