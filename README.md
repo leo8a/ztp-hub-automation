@@ -1,4 +1,4 @@
-# Requirements to fully automate the initial OpenShift Hub cluster deployment
+# Resources to fully automate the Zero Touch Provisioning (ZTP) Hub deployment
 
 ## Summary
 
@@ -6,7 +6,7 @@ The general workflow proposed to prepare an initial OpenShift Hub cluster with Z
 
 ![High-level requirements to prepare an OpenShift Hub cluster with ZTP capabilities.](assets/general-workflow.drawio.png)
 
-As shown, the image breaks down the whole deployment process into node, network, and bastion services’ requirements for the initial Hub cluster automation. Each one of these requirements organizes all the needed configuration tasks into ordered phases. Specifically, each requirement has several phases, which contains a group of atomic tasks to be performed in order to fulfil its corresponding requirement entirely.
+As shown, the image breaks down the whole deployment process into node, network, and bastion services’ requirements for the initial Hub cluster automation. Each one of these requirements organizes all the needed configuration tasks into ordered phases. Specifically, each **requirement** has several **phases**, which contains a group of atomic **tasks** to be performed in order to fulfil its corresponding requirement entirely.
 
 > **Note:** Procedure described in this document mainly targets telco environments, which means that the proposed methods, tools, and artifacts assume OpenShift deployments on an IPv6 network, via `virtualmedia` addressing, and with a disconnected registry. Additionally, all artifacts needed for the initial Hub cluster deployment as well as the Spoke clusters, should be served from the local network.
 
@@ -16,4 +16,8 @@ The documentation for the node requirements can be found [here](docs/node-requir
 
 ## Network requirements
 
+The documentation for the network requirements can be found [here](docs/network-requirements.md).
+
 ## Services' requirements
+
+The documentation for the node requirements can be found [here](docs/services-requirements.md).
