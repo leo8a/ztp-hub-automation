@@ -1,0 +1,91 @@
+---
+- hosts: all
+  tasks:
+  # =============================================================
+  # 1.1) Hardware / Baseboard Management Controller (BMC) Phase #
+  # =============================================================
+  # TODO: Check minimum hardware requirements
+  # TODO: Install latest BIOS and driver versions
+  # TODO: Clean up boot entries
+
+
+  # ===========================================
+  # 1.2) Operating System (OS) / Kernel Phase #
+  # ===========================================
+    # 1.2.1) Bastion node bootstrapping
+    - name: Bastion node bootstrapping
+      block:
+        - name: Install required software dependencies
+          yum:
+            name:
+              - libvirt
+              - httpd
+              - chrony
+              - podman
+              - dnsmasq
+              - radvd
+              - python3-cryptography
+              - python3-passlib
+            state: present
+
+        - name: Install nice-to-have tools
+          yum:
+            name:
+              - bash-completion
+              - jq
+              - tmux
+              - vim
+              - skopeo
+              - libndp
+              - ipmitool
+            state: present
+      become: true
+      become_user: root
+
+    # 1.2.2) Kernel configurations
+    - name: Kernel configurations on Bastion node
+      block:
+        - name: Accept RA packets to configure IPv6
+          sysctl:
+            name: net.ipv6.conf.all.accept_ra
+            value: '2'
+            state: present
+
+        - name: Enable IPv6 forwarding in all interfaces
+          sysctl:
+            name: net.ipv6.conf.all.forwarding
+            value: '1'
+            state: present
+
+        - name: Enable IPv6 address in loopback interface
+          sysctl:
+            name: net.ipv6.conf.lo.disable_ipv6
+            value: '0'
+            state: present
+
+        - name: Enable IPv4 forwarding in all interfaces
+          sysctl:
+            name: net.ipv4.conf.all.forwarding
+            value: '1'
+            state: present
+
+        - name: Set no source validation for IPv4 packets
+          sysctl:
+            name: net.ipv4.conf.all.rp_filter
+            value: '0'
+            state: present
+      become: true
+      become_user: root
+
+
+  # ===============================
+  # Closing the Node Requirements #
+  # ===============================
+    - name: Check if reboot required
+      stat:
+        path: /var/run/reboot-required
+      register: reboot_required_file
+
+    - name: Reboot ztp-bastion node
+      reboot:
+      when: reboot_required_file.stat.exists == true

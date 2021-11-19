@@ -9,8 +9,8 @@ Vagrant.configure("2") do |config|
   config.ssh.insert_key = false
   config.vbguest.auto_update = false
 
-  config.vm.network "forwarded_port", guest: 80, host: 8080    # HTTP server
-  config.vm.network "forwarded_port", guest: 3000, host: 3000  # Gogs repository server
+  config.vm.network "forwarded_port", guest: 80, host: 8080    # Local HTTP server
+  config.vm.network "forwarded_port", guest: 3000, host: 3000  # Repository server
   config.vm.network "forwarded_port", guest: 5000, host: 5000  # Disconnected registry
 
   config.vm.provider "virtualbox" do |v|
@@ -26,8 +26,9 @@ Vagrant.configure("2") do |config|
   end
 
   # node requirements
-  config.vm.provision "node", type: "shell", path: "hacks/1_node_reqs.sh"
-  config.vm.provision :reload
+  config.vm.provision "ansible" do |ansible|
+    ansible.playbook = "automation/node-requirements.yml"
+  end
 
   # network requirements
   config.vm.provision "network", type: "shell", path: "hacks/2_network_reqs.sh"
