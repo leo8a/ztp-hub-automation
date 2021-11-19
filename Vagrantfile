@@ -9,8 +9,8 @@ Vagrant.configure("2") do |config|
   config.ssh.insert_key = false
   config.vbguest.auto_update = false
 
-  config.vm.network "forwarded_port", guest: 80, host: 8080    # HTTP server
-  config.vm.network "forwarded_port", guest: 3000, host: 3000  # Gogs repository server
+  config.vm.network "forwarded_port", guest: 80, host: 8080    # Local HTTP server
+  config.vm.network "forwarded_port", guest: 3000, host: 3000  # Repository server
   config.vm.network "forwarded_port", guest: 5000, host: 5000  # Disconnected registry
 
   config.vm.provider "virtualbox" do |v|
@@ -26,13 +26,32 @@ Vagrant.configure("2") do |config|
   end
 
   # node requirements
-  config.vm.provision "node", type: "shell", path: "hacks/1_node_reqs.sh"
-  config.vm.provision :reload
+  config.vm.provision "ansible" do |ansible|
+    ansible.playbook = "automation/node-requirements.yml"
+  end
 
   # network requirements
-  config.vm.provision "network", type: "shell", path: "hacks/2_network_reqs.sh"
+  config.vm.provision "ansible" do |ansible|
+    ansible.playbook = "automation/network-requirements.yml"
+    ansible.extra_vars = {
+        bastion_nic: "eth0",
+        bastion_ipv6_mask: "64",
+        bastion_ipv6_ip: "cafe:8a::5",
+        bastion_ipv6_cidr: "cafe:8a::/64",
+        bastion_cluster_network: "baremetal"
+    }
+  end
 
-  # helper service's requirements
-  config.vm.provision "services", type: "shell", path: "hacks/3_services_reqs.sh"
+  # ztp-bastion service's requirements
+  config.vm.provision "ansible" do |ansible|
+    ansible.playbook = "automation/services-requirements.yml"
+    ansible.extra_vars = {
+        LOCAL_REPOSITORY: "ocp4",
+        OCP_RELEASE: "4.8.12-x86_64",
+        REFRESH_RHCOS_IMAGES: "false",
+        PULL_SECRET_PATH: "/vagrant/pull_secret.json",
+        OCP_REGISTRY: "quay.io/openshift-release-dev/ocp-release"
+        }
+  end
 
 end

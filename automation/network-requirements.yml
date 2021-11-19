@@ -1,0 +1,97 @@
+---
+- hosts: all
+  tasks:
+  # =====================
+  #  2.1) Layer 2 Phase #
+  # =====================
+
+
+  # =====================
+  #  2.2) Layer 3 Phase #
+  # =====================
+    # 2.2.1) Configure network interface
+    - name: Configure network interface in Bastion node
+      block:
+        - name: Create baremetal bridge interface
+          nmcli:
+            stp: no
+            type: bridge
+            state: present
+            gw4: "10.0.2.2"
+            ip4: "10.0.2.15/24"
+            ifname: "{{ bastion_cluster_network }}"
+            conn_name: "{{ bastion_cluster_network }}"
+            ip6: "{{ bastion_ipv6_ip }}/{{ bastion_ipv6_mask }}"
+
+        - name: Create baremetal bridge interface slave
+          shell:
+            cmd: 'nmcli con modify "System {{ bastion_nic }}" master {{ bastion_cluster_network }} slave-type bridge'
+
+        - name: Activate baremetal bridge interface
+          shell:
+            cmd: "nmcli con up {{ bastion_cluster_network }}"
+      become: true
+      become_user: root
+
+    # 2.2.2) Configure RaDVD and SLAAC
+    - name: Configure RaDVD and disable SLAAC in Bastion node
+      block:
+        - name: Configure RaDVD
+          template:
+            src: "../templates/etc/radvd/radvd.conf.j2"
+            dest: "/etc/radvd.conf"
+
+        - name: Reload or restart RaDVD service
+          service:
+            name: radvd
+            state: restarted
+            enabled: true
+      become: true
+      become_user: root
+
+    # 2.2.3) Configure DNS, DHCP with dnsmasq, and NTP
+    - name: Configure DNS, DHCP, and NTP services in Bastion node
+      block:
+        - name: Configure NTP server
+          template:
+            src: "../templates/etc/chrony/chrony.conf.j2"
+            dest: "/etc/chrony.conf"
+            owner: root
+            group: root
+            mode: 0644
+
+        - name: Reload or restart NTP service
+          service:
+            name: chronyd
+            state: restarted
+            enabled: true
+      become: true
+      become_user: root
+
+
+  # =====================
+  #  2.3) Layer 4 Phase #
+  # =====================
+    - name: Disable firewalld
+      service:
+        name: firewalld
+        state: stopped
+        enabled: false
+      become: true
+      become_user: root
+
+  # TODO: Configure External Proxy
+  # TODO: Configure External Load Balancer
+
+
+    # ==================================
+    # Closing the Network Requirements #
+    # ==================================
+    - name: Check if reboot required
+      stat:
+        path: /var/run/reboot-required
+      register: reboot_required_file
+
+    - name: Reboot ztp-bastion node
+      reboot:
+      when: reboot_required_file.stat.exists == true

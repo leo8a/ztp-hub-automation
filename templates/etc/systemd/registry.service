@@ -1,0 +1,18 @@
+[Unit]
+Description=Podman container - Disconnected Registry
+After=network.target
+StartLimitBurst=99
+StartLimitIntervalSec=60s
+
+[Service]
+Type=simple
+WorkingDirectory=/root
+TimeoutStartSec=300
+ExecStartPre=-/usr/bin/podman rm -f disconnected-registry
+ExecStart=-/usr/bin/podman run --name disconnected-registry -p 5000:5000 -e "REGISTRY_AUTH=htpasswd" -e "REGISTRY_AUTH_HTPASSWD_REALM=Registry" -e "REGISTRY_HTTP_SECRET=ALongRandomSecretForRegistry" -e "REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd" -e "REGISTRY_HTTP_TLS_CERTIFICATE=/certs/domain.crt" -e "REGISTRY_HTTP_TLS_KEY=/certs/domain.key" -e "REGISTRY_COMPATIBILITY_SCHEMA1_ENABLED=true" -v /opt/registry/data:/var/lib/registry:z -v /opt/registry/auth:/auth:z -v /opt/registry/certs:/certs:z docker.io/library/registry:2
+ExecStop=-/usr/bin/podman rm -f disconnected-registry
+Restart=always
+RestartSec=30s
+
+[Install]
+WantedBy=multi-user.target
