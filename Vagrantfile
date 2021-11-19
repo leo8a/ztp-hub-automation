@@ -42,6 +42,16 @@ Vagrant.configure("2") do |config|
     }
   end
 
-  # helper service's requirements
+  # ztp-bastion service's requirements
+  config.vm.provision "ansible" do |ansible|
+    ansible.playbook = "automation/services-requirements.yml"
+    ansible.extra_vars = {
+        LOCAL_REPOSITORY: "ocp4",
+        OCP_RELEASE: "4.8.12-x86_64",
+        REFRESH_RHCOS_IMAGES: "false",
+        PULL_SECRET_PATH: "/vagrant/pull_secret.json",
+        OCP_REGISTRY: "quay.io/openshift-release-dev/ocp-release"
+        }
+  end
 
 end

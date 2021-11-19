@@ -1,0 +1,211 @@
+---
+- hosts: all
+  tasks:
+  # ===============================
+  #  3.1) Local HTTP server Phase #
+  # ===============================
+    - name: Prepare HTTP server contents in Bastion node
+      block:
+        - name: Ensure HTTP server is enabled and running
+          service:
+            name: httpd
+            state: started
+            enabled: true
+
+        - name: Get OpenShift stream raw info
+          command: >
+            openshift-baremetal-install coreos print-stream-json
+          register: ocp_stream_raw_info
+
+        - name: Filter raw info for OpenShift stream data
+          set_fact:
+            RHCOS_VERSION: "{{ (ocp_stream_raw_info.stdout | from_json).architectures.x86_64.artifacts.metal.release }}"
+            RHCOS_ISO_URI: "{{ (ocp_stream_raw_info.stdout | from_json).architectures.x86_64.artifacts.metal.formats.iso.disk.location }}"
+            RHCOS_ROOT_FS: "{{ (ocp_stream_raw_info.stdout | from_json).architectures.x86_64.artifacts.metal.formats.pxe.rootfs.location }}"
+            RHCOS_QEMU_URI: "{{ ((ocp_stream_raw_info.stdout | from_json).architectures.x86_64.artifacts.qemu.formats | json_query('*.disk.location'))[0] }}"
+            RHCOS_QEMU_SHA_COMPRESSED: "{{ ((ocp_stream_raw_info.stdout | from_json).architectures.x86_64.artifacts.qemu.formats | json_query('*.disk.sha256'))[0] }}"
+            RHCOS_OPENSTACK_URI: "{{ ((ocp_stream_raw_info.stdout | from_json).architectures.x86_64.artifacts.openstack.formats | json_query('*.disk.location'))[0] }}"
+            RHCOS_OPENSTACK_SHA_COMPRESSED: "{{ ((ocp_stream_raw_info.stdout | from_json).architectures.x86_64.artifacts.openstack.formats | json_query('*.disk.sha256'))[0] }}"
+
+        - name: Print filtered OpenShift stream data
+          debug:
+            msg:
+            - "RHCOS_VERSION: {{ RHCOS_VERSION }}"
+            - "RHCOS_ISO_URI: {{ RHCOS_ISO_URI }}"
+            - "RHCOS_ROOT_FS: {{ RHCOS_ROOT_FS }}"
+            - "RHCOS_QEMU_URI {{ RHCOS_QEMU_URI }}"
+            - "RHCOS_QEMU_SHA_COMPRESSED: {{ RHCOS_QEMU_SHA_COMPRESSED }}"
+            - "RHCOS_OPENSTACK_URI: {{ RHCOS_OPENSTACK_URI }}"
+            - "RHCOS_OPENSTACK_SHA_COMPRESSED: {{ RHCOS_OPENSTACK_SHA_COMPRESSED }}"
+
+        - name: Create folder for RHCOS resources
+          file:
+            path: "/var/www/html/{{ OCP_RELEASE }}"
+            state: directory
+          register: ocp_release_path
+
+        - name: Downloading the RHCOS ISO
+          get_url:
+            url: "{{ RHCOS_ISO_URI }}"
+            dest: "{{ ocp_release_path }}/{{ RHCOS_ISO_URI | basename }}"
+          register: rhcos_iso_uri
+          when: ocp_release_path is not defined or REFRESH_RHCOS_IMAGES is true
+
+        - name: Downloading the RHCOS RootFS
+          get_url:
+            url: "{{ RHCOS_ROOT_FS }}"
+            dest: "{{ ocp_release_path }}/{{ RHCOS_ROOT_FS | basename }}"
+          register: rhcos_root_fs
+          when: ocp_release_path is not defined or REFRESH_RHCOS_IMAGES is true
+
+        - name: Downloading the RHCOS QEMU Image
+          get_url:
+            url: "{{ RHCOS_QEMU_URI }}"
+            dest: "{{ ocp_release_path }}/{{ RHCOS_QEMU_URI | basename }}"
+            checksum: sha256:{{ RHCOS_QEMU_SHA_COMPRESSED }}
+          register: rhcos_qemu_uri
+          when: ocp_release_path is not defined or REFRESH_RHCOS_IMAGES is true
+
+        - name: Downloading the RHCOS Openstack Image
+          get_url:
+            url: "{{ RHCOS_OPENSTACK_URI }}"
+            dest: "{{ ocp_release_path }}/{{ RHCOS_OPENSTACK_URI | basename }}"
+            checksum: sha256:{{ RHCOS_OPENSTACK_SHA_COMPRESSED }}
+          register: rhcos_openstack_uri
+          when: ocp_release_path is not defined or REFRESH_RHCOS_IMAGES is true
+      become: true
+      become_user: root
+
+
+  # ===================================
+  #  3.2) Disconnected Registry Phase #
+  # ===================================
+    - name: Prepare disconnected registry in Bastion node
+      block:
+        - name: Register the fully qualified domain name of the registry node
+          command: hostname --long
+          register: host_fqdn
+
+        - name: Ensure Podman is enabled and running
+          service:
+            name: podman
+            state: started
+            enabled: true
+
+        - name: Create directory structure for disconnected registry
+          file:
+            path: "/opt/registry/{{ item }}"
+            state: directory
+          loop:
+            - auth
+            - certs
+            - data
+
+        - name: Create private key (RSA, 4096 bits)
+          community.crypto.openssl_privatekey:
+            path: /opt/registry/certs/domain.key
+
+        - name: Create certificate signing request (CSR) for self-signed certificate
+          community.crypto.openssl_csr_pipe:
+            privatekey_path: /opt/registry/certs/domain.key
+            organization_name: "{{ host_fqdn.stdout }}, Inc."
+            subject_alt_name:
+              - "DNS:{{ host_fqdn.stdout }}"
+          register: csr
+
+        - name: Create self-signed certificate from CSR
+          community.crypto.x509_certificate:
+            path: /opt/registry/certs/domain.crt
+            csr_content: "{{ csr.csr }}"
+            privatekey_path: /opt/registry/certs/domain.key
+            provider: selfsigned
+
+        - name: Create an htpasswd file for the disconnected registry container
+          htpasswd:
+            path: /opt/registry/auth/htpasswd
+            name: kni
+            password: kni
+
+        - name: Create systemd service for the disconnected registry container
+          copy:
+            src: "../templates/etc/systemd/registry.service"
+            dest: "/etc/systemd/system/registry.service"
+
+        - name: Ensure disconnected registry container is enabled and running
+          service:
+            name: registry
+            state: started
+            enabled: true
+
+        - name: Register the http credentials used to create the htpasswd file
+          shell: echo -n 'kni:kni' | base64
+          register: b64auth
+
+        - name: Register the http credentials used to create the htpasswd file
+          set_fact:
+            AUTHSTRING: "{\"{{ host_fqdn.stdout }}:5000\": {\"auth\": \"{{ b64auth.stdout }}\",\"email\": \"kni@redhat.com\"}}"
+
+        - name: Print variable to update the {{ PULL_SECRET_PATH }} file
+          debug:
+            msg:
+              - "host_fqdn: {{ host_fqdn.stdout }}"
+              - "b64auth: {{ b64auth.stdout }}"
+              - "AUTHSTRING: {{ AUTHSTRING }}"
+
+        # TODO: improve this task via below command
+        # jq '.auths += {{ AUTHSTRING }}' < {{ PULL_SECRET_PATH }} > {{ PULL_SECRET_PATH }}
+        - name: Update the {{ PULL_SECRET_PATH }} file
+          copy:
+            src: "../pull_secret.json"
+            dest: "{{ PULL_SECRET_PATH }}"
+
+#        - name: Mirroring the OpenShift {{ OCP_RELEASE }} release images to the local repository
+#          command: "oc adm -a {{ PULL_SECRET_PATH }} release mirror \
+#                           --from={{ OCP_REGISTRY }}:{{ OCP_RELEASE }} \
+#                           --to={{ host_fqdn.stdout }}:5000/{{ LOCAL_REPOSITORY }} \
+#                           --to-release-image={{ host_fqdn.stdout }}:5000/{{ LOCAL_REPOSITORY  }}:{{ OCP_RELEASE }}"
+      become: true
+      become_user: root
+
+
+  # ==============================
+  #  3.3) Local Repository Phase #
+  # ==============================
+    - name: Prepare repository server in Bastion node
+      block:
+        - name: Create directory for the local repository server
+          file:
+            path: "/opt/gogs"
+            state: directory
+
+        - name: Create systemd service for the local repository server
+          copy:
+            src: "../templates/etc/systemd/gogs.service"
+            dest: "/etc/systemd/system/gogs.service"
+
+        - name: Ensure local repository server is enabled and running
+          service:
+            name: gogs
+            state: started
+            enabled: true
+      become: true
+      become_user: root
+
+
+  # ============================================
+  #  3.4) On-prem Artifactory Phase (optional) #
+  # ============================================
+  # TODO: automate JFrog install and configuration
+
+
+  # ===================================
+  # Closing the Services Requirements #
+  # ===================================
+    - name: Check if reboot required
+      stat:
+        path: /var/run/reboot-required
+      register: reboot_required_file
+
+    - name: Reboot ztp-bastion node
+      reboot:
+      when: reboot_required_file.stat.exists == true

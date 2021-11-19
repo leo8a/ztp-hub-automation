@@ -1,0 +1,18 @@
+[Unit]
+Description=Podman container - Gogs Server
+After=network.target
+StartLimitBurst=99
+StartLimitIntervalSec=60s
+
+[Service]
+Type=simple
+WorkingDirectory=/root
+TimeoutStartSec=300
+ExecStartPre=-/usr/bin/podman rm -f local-repository
+ExecStart=-/usr/bin/podman run --network=host --privileged --name local-repository -p 8022:22 -p 3000:3000 -v /opt/gogs:/data gogs/gogs
+ExecStop=-/usr/bin/podman rm -f local-repository
+Restart=always
+RestartSec=30s
+
+[Install]
+WantedBy=multi-user.target
