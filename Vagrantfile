@@ -2,7 +2,6 @@
 # vi: set ft=ruby :
 
 # User variables
-REFRESH_ALL = false
 OCP_RELEASE = "4.9.8-x86_64"
 OCP_REGISTRY = "quay.io/openshift-release-dev/ocp-release"
 
@@ -84,11 +83,14 @@ Vagrant.configure("2") do |config|
   config.vm.provision "ansible" do |ansible|
     ansible.playbook = "automation/services-requirements.yml"
     ansible.extra_vars = {
-        LOCAL_REPOSITORY: "ocp4",
-        OCP_RELEASE: "4.8.12-x86_64",
-        REFRESH_RHCOS_IMAGES: "false",
-        PULL_SECRET_PATH: "/vagrant/pull_secret.json",
-        OCP_REGISTRY: "quay.io/openshift-release-dev/ocp-release"
+        ocp_release: OCP_RELEASE,
+        ocp_registry: OCP_REGISTRY,
+        local_registry_user: "dummy",
+        refresh_rhcos_images: "false",
+        local_repository_name: "ocp4",
+        local_registry_password: "dummy",
+        pull_secret_path: PULL_SECRET_PATH,
+        on_prem_artifactory: ARTIFACTORY_ENABLED
         }
   end
 

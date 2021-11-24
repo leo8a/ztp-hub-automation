@@ -1,5 +1,7 @@
 ---
-- hosts: all
+- hosts: services_requirements
+  connection: local
+
   tasks:
   # ===============================
   #  3.1) Local HTTP server Phase #
@@ -16,6 +18,7 @@
           command: >
             openshift-baremetal-install coreos print-stream-json
           register: ocp_stream_raw_info
+          when: ocp_stream_raw_info is not defined
 
         - name: Filter raw info for OpenShift stream data
           set_fact:
@@ -40,41 +43,66 @@
 
         - name: Create folder for RHCOS resources
           file:
-            path: "/var/www/html/{{ OCP_RELEASE }}"
+            path: "/var/www/html/{{ ocp_release }}"
             state: directory
-          register: ocp_release_path
+          register: rhcos_folder
+
+        - name: Set the appropriate SELinux context in RHCOS resources folder
+          sefcontext:
+            target: "/var/www/html/{{ ocp_release }}(/.*)?"
+            setype: httpd_sys_content_t
+            state: present
+          when: rhcos_folder.changed or refresh_rhcos_images | bool
+
+        - name: Apply SELinux context to RHCOS resources folder
+          command: restorecon -Rv /var/www/html/{{ ocp_release }}
+          when: rhcos_folder.changed or refresh_rhcos_images | bool
 
         - name: Downloading the RHCOS ISO
           get_url:
+            timeout: 30
             url: "{{ RHCOS_ISO_URI }}"
-            dest: "{{ ocp_release_path }}/{{ RHCOS_ISO_URI | basename }}"
+            dest: "/var/www/html/{{ ocp_release }}/{{ RHCOS_ISO_URI | basename }}"
           register: rhcos_iso_uri
-          when: ocp_release_path is not defined or REFRESH_RHCOS_IMAGES is true
+          when: rhcos_iso_uri is not defined or refresh_rhcos_images | bool
 
         - name: Downloading the RHCOS RootFS
           get_url:
+            timeout: 30
             url: "{{ RHCOS_ROOT_FS }}"
-            dest: "{{ ocp_release_path }}/{{ RHCOS_ROOT_FS | basename }}"
+            dest: "/var/www/html/{{ ocp_release }}/{{ RHCOS_ROOT_FS | basename }}"
           register: rhcos_root_fs
-          when: ocp_release_path is not defined or REFRESH_RHCOS_IMAGES is true
+          when: rhcos_root_fs is not defined or refresh_rhcos_images | bool
 
         - name: Downloading the RHCOS QEMU Image
           get_url:
+            timeout: 30
             url: "{{ RHCOS_QEMU_URI }}"
-            dest: "{{ ocp_release_path }}/{{ RHCOS_QEMU_URI | basename }}"
+            dest: "/var/www/html/{{ ocp_release }}/{{ RHCOS_QEMU_URI | basename }}"
             checksum: sha256:{{ RHCOS_QEMU_SHA_COMPRESSED }}
           register: rhcos_qemu_uri
-          when: ocp_release_path is not defined or REFRESH_RHCOS_IMAGES is true
+          when: rhcos_qemu_uri is not defined or refresh_rhcos_images | bool
 
         - name: Downloading the RHCOS Openstack Image
           get_url:
+            timeout: 30
             url: "{{ RHCOS_OPENSTACK_URI }}"
-            dest: "{{ ocp_release_path }}/{{ RHCOS_OPENSTACK_URI | basename }}"
+            dest: "/var/www/html/{{ ocp_release }}/{{ RHCOS_OPENSTACK_URI | basename }}"
             checksum: sha256:{{ RHCOS_OPENSTACK_SHA_COMPRESSED }}
           register: rhcos_openstack_uri
-          when: ocp_release_path is not defined or REFRESH_RHCOS_IMAGES is true
+          when: rhcos_openstack_uri is not defined or refresh_rhcos_images | bool
+
+        - name: Check downloaded ISOs are reachable on the baremetal network
+          uri:
+            url: "{{ item.url }}"
+          with_items:
+            - { name: RHCOS_ISO_URI, url: "http://10.0.2.15/{{ ocp_release }}/{{ RHCOS_ISO_URI | basename }}" }
+            - { name: RHCOS_ROOT_FS, url: "http://10.0.2.15/{{ ocp_release }}/{{ RHCOS_ROOT_FS | basename }}" }
+            - { name: RHCOS_QEMU_URI, url: "http://10.0.2.15/{{ ocp_release }}/{{ RHCOS_QEMU_URI | basename }}" }
+            - { name: RHCOS_OPENSTACK_URI, url: "http://10.0.2.15/{{ ocp_release }}/{{ RHCOS_OPENSTACK_URI | basename }}" }
       become: true
       become_user: root
+      when: not on_prem_artifactory | bool
 
 
   # ===================================
@@ -82,10 +110,6 @@
   # ===================================
     - name: Prepare disconnected registry in Bastion node
       block:
-        - name: Register the fully qualified domain name of the registry node
-          command: hostname --long
-          register: host_fqdn
-
         - name: Ensure Podman is enabled and running
           service:
             name: podman
@@ -100,31 +124,45 @@
             - auth
             - certs
             - data
+          register: registry_folders
 
-        - name: Create private key (RSA, 4096 bits)
-          community.crypto.openssl_privatekey:
-            path: /opt/registry/certs/domain.key
+        - name: Create certificate for disconnected registry
+          shell: |
+            host_fqdn="{{ ansible_fqdn }}"
+            cert_c="ES"                     # Country Name (C, 2 letter code)
+            cert_s="Catalunya"              # Certificate State (S)
+            cert_l="Girona"                 # Certificate Locality (L)
+            cert_o="Salvador Dali"          # Certificate Organization (O)
+            cert_ou="Port Lligat"           # Certificate Organizational Unit (OU)
+            cert_cn="{{ ansible_fqdn }}"    # Certificate Common Name (CN)
 
-        - name: Create certificate signing request (CSR) for self-signed certificate
-          community.crypto.openssl_csr_pipe:
-            privatekey_path: /opt/registry/certs/domain.key
-            organization_name: "{{ host_fqdn.stdout }}, Inc."
-            subject_alt_name:
-              - "DNS:{{ host_fqdn.stdout }}"
-          register: csr
+            openssl req \
+                -newkey rsa:4096 \
+                -nodes \
+                -sha256 \
+                -keyout /opt/registry/certs/domain.key \
+                -x509 \
+                -days 365 \
+                -out /opt/registry/certs/domain.crt \
+                -addext "subjectAltName = DNS:${host_fqdn}" \
+                -subj "/C=${cert_c}/ST=${cert_s}/L=${cert_l}/O=${cert_o}/OU=${cert_ou}/CN=${cert_cn}"
+          when: registry_folders.changed
 
-        - name: Create self-signed certificate from CSR
-          community.crypto.x509_certificate:
-            path: /opt/registry/certs/domain.crt
-            csr_content: "{{ csr.csr }}"
-            privatekey_path: /opt/registry/certs/domain.key
-            provider: selfsigned
+        - name: Copy new certificate to Bastion node ca-trust
+          copy:
+            src: "/opt/registry/certs/domain.crt"
+            dest: "/etc/pki/ca-trust/source/anchors/domain.crt"
+          when: registry_folders.changed
+
+        - name: Update Bastion node ca-trust with the new certificate
+          shell: |
+            update-ca-trust extract
+          when: registry_folders.changed
 
         - name: Create an htpasswd file for the disconnected registry container
-          htpasswd:
-            path: /opt/registry/auth/htpasswd
-            name: kni
-            password: kni
+          shell: |
+            htpasswd -bBc /opt/registry/auth/htpasswd {{ local_registry_user }} {{ local_registry_password }}
+          when: registry_folders.changed
 
         - name: Create systemd service for the disconnected registry container
           copy:
@@ -138,34 +176,43 @@
             enabled: true
 
         - name: Register the http credentials used to create the htpasswd file
-          shell: echo -n 'kni:kni' | base64
-          register: b64auth
+          shell: |
+            echo -n '{{ local_registry_user }}:{{ local_registry_password }}' | base64
+          register: b64_auth
 
         - name: Register the http credentials used to create the htpasswd file
           set_fact:
-            AUTHSTRING: "{\"{{ host_fqdn.stdout }}:5000\": {\"auth\": \"{{ b64auth.stdout }}\",\"email\": \"kni@redhat.com\"}}"
+            auth_string: "{\"{{ ansible_fqdn }}:5000\": {\"auth\": \"{{ b64_auth.stdout }}\",\"email\": \"{{ local_registry_user }}@redhat.com\"}}"
+          when: b64_auth.changed
 
-        - name: Print variable to update the {{ PULL_SECRET_PATH }} file
-          debug:
-            msg:
-              - "host_fqdn: {{ host_fqdn.stdout }}"
-              - "b64auth: {{ b64auth.stdout }}"
-              - "AUTHSTRING: {{ AUTHSTRING }}"
+        - name: Read content of the {{ pull_secret_path }} file
+          shell: |
+            cat {{ pull_secret_path }}
+          register: pull_secret_content
 
-        # TODO: improve this task via below command
-        # jq '.auths += {{ AUTHSTRING }}' < {{ PULL_SECRET_PATH }} > {{ PULL_SECRET_PATH }}
-        - name: Update the {{ PULL_SECRET_PATH }} file
+        - name: Update {{ pull_secret_path }} file
           copy:
-            src: "../pull_secret.json"
-            dest: "{{ PULL_SECRET_PATH }}"
+            content: "{{ (pull_secret_content.stdout | from_json) | combine({'auths':auth_string}, recursive=True) | to_nice_json }}"
+            dest: "{{ pull_secret_path }}"
+          when: b64_auth.changed
 
-#        - name: Mirroring the OpenShift {{ OCP_RELEASE }} release images to the local repository
-#          command: "oc adm -a {{ PULL_SECRET_PATH }} release mirror \
-#                           --from={{ OCP_REGISTRY }}:{{ OCP_RELEASE }} \
-#                           --to={{ host_fqdn.stdout }}:5000/{{ LOCAL_REPOSITORY }} \
-#                           --to-release-image={{ host_fqdn.stdout }}:5000/{{ LOCAL_REPOSITORY  }}:{{ OCP_RELEASE }}"
+        - name: Check if entries on {{ pull_secret_path }} file are not expired
+          shell: |
+            pullsecret-validator-cli -f {{ pull_secret_path }} -o json
+          register: pullsecret_status
+          failed_when: (pullsecret_status.stdout | from_json).auths.expired != []
+
+        - name: Print status of entries in the {{ pull_secret_path }} file
+          debug:
+            msg: "{{ (pullsecret_status.stdout | from_json) }}"
+
+        - name: Mirroring the OpenShift {{ ocp_release }} release images to the local repository
+          shell: |
+            oc adm -a {{ pull_secret_path }} release mirror --from={{ ocp_registry }}:{{ ocp_release }} --to={{ ansible_fqdn }}:5000/{{ local_repository_name }} --to-release-image={{ ansible_fqdn }}:5000/{{ local_repository_name }}:{{ ocp_release }}
+          when: registry_folders.changed
       become: true
       become_user: root
+      when: not on_prem_artifactory | bool
 
 
   # ==============================
@@ -190,22 +237,34 @@
             enabled: true
       become: true
       become_user: root
+      when: not on_prem_artifactory | bool
 
 
   # ============================================
   #  3.4) On-prem Artifactory Phase (optional) #
   # ============================================
   # TODO: automate JFrog install and configuration
+    - name: Prepare on-prem artifactory in Bastion node
+      block:
+        - debug:
+            msg: "TODO: Prepare on-prem artifactory in Bastion node"
+      become: true
+      become_user: root
+      when: on_prem_artifactory | bool
 
 
   # ===================================
   # Closing the Services Requirements #
   # ===================================
-    - name: Check if reboot required
-      stat:
-        path: /var/run/reboot-required
-      register: reboot_required_file
+    - name: Close the Services requirements
+      block:
+      - name: Check if reboot required
+        stat:
+          path: /var/run/reboot-required
+        register: reboot_required_file
 
-    - name: Reboot ztp-bastion node
-      reboot:
-      when: reboot_required_file.stat.exists == true
+      - name: Reboot ztp-bastion node
+        reboot:
+        when: reboot_required_file.stat.exists == true
+      become: true
+      become_user: root
