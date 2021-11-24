@@ -1,6 +1,16 @@
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
 
+# User variables
+REFRESH_ALL = false
+OCP_RELEASE = "4.9.8-x86_64"
+OCP_REGISTRY = "quay.io/openshift-release-dev/ocp-release"
+
+REFRESH_ALL = false
+ARTIFACTORY_ENABLED = false
+PULL_SECRET_PATH = "/vagrant/pull_secret.json"
+
+
 # Define the image box
 IMAGE_NAME = "generic/rhel8"
 
@@ -28,6 +38,12 @@ Vagrant.configure("2") do |config|
   # node requirements
   config.vm.provision "ansible" do |ansible|
     ansible.playbook = "automation/node-requirements.yml"
+    ansible.extra_vars = {
+        ocp_release: OCP_RELEASE,
+        ocp_registry: OCP_REGISTRY,
+        refresh_oc_tools: REFRESH_ALL,
+        pull_secret_path: PULL_SECRET_PATH
+        }
   end
 
   # network requirements

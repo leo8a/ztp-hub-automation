@@ -1,5 +1,7 @@
 ---
-- hosts: all
+- hosts: node_requirements
+  connection: local
+
   tasks:
   # =============================================================
   # 1.1) Hardware / Baseboard Management Controller (BMC) Phase #
@@ -39,6 +41,59 @@
               - libndp
               - ipmitool
             state: present
+
+        - name: Check if OpenShift CLI present in Bastion node
+          stat:
+            path: "/usr/bin/oc"
+          register: oc_present
+
+        # TODO: automate oc installation from scratch
+        - name: Copy OpenShift CLI from the binaries folder
+          copy:
+            src: "../binaries/oc"
+            dest: "/usr/bin/oc"
+            mode: 755
+          when: not oc_present.stat.exists or refresh_oc_tools | bool
+
+        - name: Download OpenShift CLI for {{ ocp_release }} release
+          command: oc adm --registry-config {{ pull_secret_path }} release extract --command=oc --from={{ ocp_registry }}:{{ ocp_release }} --to /opt
+          when: not oc_present.stat.exists or refresh_oc_tools | bool
+
+        - name: Move OpenShift CLI for {{ ocp_release }} release
+          copy:
+            remote_src: true
+            src: "/opt/oc"
+            dest: "/usr/bin/oc"
+            mode: 755
+          when: not oc_present.stat.exists or refresh_oc_tools | bool
+
+        - name: Check if OpenShift Baremetal Installer present in Bastion node
+          stat:
+            path: "/usr/bin/openshift-baremetal-install"
+          register: obi_present
+
+        - name: Download OpenShift Baremetal Installer for {{ ocp_release }} release
+          command: oc adm --registry-config {{ pull_secret_path }} release extract --command=openshift-baremetal-install --from={{ ocp_registry }}:{{ ocp_release }} --to /opt
+          when: not obi_present.stat.exists or refresh_oc_tools | bool
+
+        - name: Move OpenShift Baremetal Installer for {{ ocp_release }} release
+          copy:
+            remote_src: true
+            src: "/opt/openshift-baremetal-install"
+            dest: "/usr/bin/openshift-baremetal-install"
+            mode: 755
+          when: not obi_present.stat.exists or refresh_oc_tools | bool
+
+        - name: Download pullsecret-validator-cli tool
+          get_url:
+            url: "https://github.com/RHsyseng/pullsecret-validator-cli/releases/download/v1.0.6/pullsecret-validator-cli-v1.0.6-linux-amd64.tar.gz"
+            dest: "/opt/pullsecret-validator-cli-v1.0.6-linux-amd64.tar.gz"
+
+        - name: Untar pullsecret-validator-cli tool
+          unarchive:
+            src: "/opt/pullsecret-validator-cli-v1.0.6-linux-amd64.tar.gz"
+            dest: "/usr/local/bin"
+            mode: 755
       become: true
       become_user: root
 
@@ -69,10 +124,14 @@
             value: '1'
             state: present
 
-        - name: Set no source validation for IPv4 packets
+        # Current recommended practice in RFC3704 is to enable strict mode
+        # to prevent IP spoofing from DDos attacks. If using asymmetric routing
+        # or other complicated routing, then loose mode is recommended.
+        # Article: https://access.redhat.com/solutions/53031
+        - name: Set loose mode to netfilter when validating IPv4 packets
           sysctl:
             name: net.ipv4.conf.all.rp_filter
-            value: '0'
+            value: '2'
             state: present
       become: true
       become_user: root
@@ -81,11 +140,15 @@
   # ===============================
   # Closing the Node Requirements #
   # ===============================
-    - name: Check if reboot required
-      stat:
-        path: /var/run/reboot-required
-      register: reboot_required_file
+    - name: Close the Node requirements
+      block:
+        - name: Check if reboot required
+          stat:
+            path: /var/run/reboot-required
+          register: reboot_required_file
 
-    - name: Reboot ztp-bastion node
-      reboot:
-      when: reboot_required_file.stat.exists == true
+        - name: Reboot ztp-bastion node
+          reboot:
+          when: reboot_required_file.stat.exists == true
+      become: true
+      become_user: root
