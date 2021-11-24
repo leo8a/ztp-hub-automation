@@ -6,5 +6,5 @@ binaries
 
 # files
 *.log
-Vagranfile
 pull_secret.json
+automation/inventory/hosts.yml

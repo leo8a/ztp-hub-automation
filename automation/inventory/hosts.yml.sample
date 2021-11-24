@@ -1,0 +1,52 @@
+all:
+  hosts:
+    bastion.leo8a.io
+  vars:
+    ocp_release: "4.9.8-x86_64"
+    ocp_registry: "quay.io/openshift-release-dev/ocp-release"
+    pull_secret_path: "/vagrant/pull_secret.json"
+
+  children:
+    node_requirements:
+      hosts:
+        bastion.leo8a.io
+      vars:
+        refresh_oc_tools: false
+
+    network_requirements:
+      hosts:
+        bastion.leo8a.io
+      vars:
+        bastion_nic: "eth1"
+        bastion_ipv6_mask: "64"
+        bastion_ipv6_ip: "1e0:8a::5"
+        bastion_ipv6_cidr: "1e0:8a::/64"
+        bastion_ipv6_start: "1e0:8a::3"
+        bastion_ipv6_end: "1e0:8a::30"
+        bastion_cluster_network: "baremetal"
+        refresh_bastion_interfaces: false
+        cluster_name: 'ztp-cluster0'
+        cluster_domain: 'leo8a.io'
+        cluster_baremetal_cidr: '1e0:8a::/64'
+        cluster_baremetal_api_ip: '1e0:8a::25/64'
+        cluster_baremetal_ingress_ip: '1e0:8a::26/64'
+        cluster_ztp_hub_nodes: {
+                   'master-0': { 'ip': '1e0:8a::10',
+                                 'mac': 'aa:aa:aa:aa:bb:01',
+                                 'hostname': 'master-0.cluster.leo8a.io' },
+                   'master-1': { 'ip': '1eo:8a::11',
+                                 'mac': 'aa:aa:aa:aa:bb:02',
+                                 'hostname': 'master-1.cluster.leo8a.io' },
+                   'master-2': { 'ip': '1e0:8a::12',
+                                 'mac': 'aa:aa:aa:aa:bb:03',
+                                 'hostname': 'master-2.cluster.leo8a.io' }}
+
+    services_requirements:
+      hosts:
+        bastion.leo8a.io
+      vars:
+        on_prem_artifactory: false
+        local_registry_user: "dummy"
+        refresh_rhcos_images: "false"
+        local_repository_name: "ocp4"
+        local_registry_password: "dummy"
