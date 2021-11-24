@@ -1,0 +1,5 @@
+---
+
+- import_playbook: node-requirements.yml
+- import_playbook: network-requirements.yml
+- import_playbook: services-requirements.yml
