@@ -1,5 +1,7 @@
 ---
-- hosts: all
+- hosts: network_requirements
+  connection: local
+
   tasks:
   # =====================
   #  2.1) Layer 2 Phase #
@@ -12,24 +14,35 @@
     # 2.2.1) Configure network interface
     - name: Configure network interface in Bastion node
       block:
+        - name: Check if {{ bastion_cluster_network }} present in Bastion node
+          stat:
+            path: "/sys/class/net/{{ bastion_cluster_network }}"
+          register: iface_present
+
         - name: Create baremetal bridge interface
-          nmcli:
-            stp: no
+          community.general.nmcli:
+            conn_name: "{{ bastion_cluster_network }}"
+            ifname: "{{ bastion_cluster_network }}"
             type: bridge
             state: present
-            gw4: "10.0.2.2"
+            stp: no
             ip4: "10.0.2.15/24"
-            ifname: "{{ bastion_cluster_network }}"
-            conn_name: "{{ bastion_cluster_network }}"
+            gw4: "10.0.2.2"
             ip6: "{{ bastion_ipv6_ip }}/{{ bastion_ipv6_mask }}"
+          when: iface_present.stat.exists == false or refresh_bastion_interfaces | bool
 
         - name: Create baremetal bridge interface slave
           shell:
             cmd: 'nmcli con modify "System {{ bastion_nic }}" master {{ bastion_cluster_network }} slave-type bridge'
+          when: iface_present.stat.exists == false or refresh_bastion_interfaces | bool
 
         - name: Activate baremetal bridge interface
           shell:
             cmd: "nmcli con up {{ bastion_cluster_network }}"
+          when: iface_present.stat.exists == false or refresh_bastion_interfaces | bool
+
+        - debug: var=ansible_{{ bastion_cluster_network }}.ipv4
+        - debug: var=ansible_{{ bastion_cluster_network }}.ipv6
       become: true
       become_user: root
 
@@ -40,16 +53,18 @@
           template:
             src: "../templates/etc/radvd/radvd.conf.j2"
             dest: "/etc/radvd.conf"
+          register: radvd_config
 
         - name: Reload or restart RaDVD service
           service:
             name: radvd
-            state: restarted
+            state: started
             enabled: true
+          when: radvd_config.changed
       become: true
       become_user: root
 
-    # 2.2.3) Configure DNS, DHCP with dnsmasq, and NTP
+    # 2.2.3) Configure DNS, DHCP with dnsmasq, and NTP with chrony
     - name: Configure DNS, DHCP, and NTP services in Bastion node
       block:
         - name: Configure NTP server
@@ -59,11 +74,70 @@
             owner: root
             group: root
             mode: 0644
+          register: chrony_config
 
-        - name: Reload or restart NTP service
+        - name: Ensure NTP server is enabled and running
           service:
             name: chronyd
-            state: restarted
+            state: started
+            enabled: true
+          when: chrony_config.changed
+
+        # to check if below is needed
+#        - name: Copy template to config directory
+#          template:
+#            src: "../templates/etc/dnsmasq.d/ipv6.hostsfile.j2"
+#            dest: "/etc/dnsmasq.d/ipv6.hostsfile"
+
+#        - name: Install and configure DNS and DHCP services
+#          include_role:
+#            name: robertdebock.dnsmasq
+#          vars:
+##            dnsmasq_conf_file: "/etc/dnsmasq.d/ipv6.hostsfile"
+#            dnsmasq_user: dnsmasq
+#            dnsmasq_group: dnsmasq
+#            dnsmasq_enable_ra: yes
+#            dnsmasq_domain_needed: no
+#            dnsmasq_strict_order: yes
+#            dnsmasq_expand_hosts: yes
+#            dnsmasq_bind_interfaces: yes
+#            dnsmasq_except_interface: lo
+#            dnsmasq_dhcp_authoritative: yes
+#            dnsmasq_dhcp_ranges:
+#              - from: "{{ bastion_ipv6_start }}"
+#                until: "{{ bastion_ipv6_end }}"
+#                leasetime: 12h
+#            dnsmasq_listen_addresses:
+#              - name: "{{ bastion_ipv6_ip }}"
+#            dnsmasq_interfaces:
+#              - name: "{{ bastion_cluster_network }}"
+
+        - name: Add IP addresses of ZTP Hub cluster nodes to /etc/hosts
+          lineinfile:
+            dest: /etc/hosts
+            regexp: '.*{{ cluster_ztp_hub_nodes[item].hostname }}$'
+            line: "{{ cluster_ztp_hub_nodes[item].ip }} {{ cluster_ztp_hub_nodes[item].hostname }}"
+            state: present
+          with_items: "{{ cluster_ztp_hub_nodes }}"
+
+        - name: Add IP addresses of ZTP Hub cluster API and endpoints to /etc/hosts
+          lineinfile:
+            dest: /etc/hosts
+            regexp: '.*{{ item.name }}$'
+            line: "{{ item.ip }} {{ item.name }}"
+            state: present
+          with_items:
+            - { name: "api-int.{{ cluster_name }}.{{ cluster_domain }}", ip: "{{ cluster_baremetal_api_ip }}" }
+            - { name: "api.{{ cluster_name }}.{{ cluster_domain }}", ip: "{{ cluster_baremetal_api_ip }}" }
+            - { name: "{{ cluster_name }}-installer.{{ cluster_name }}.{{ cluster_domain }}", ip: "{{ bastion_ipv6_ip }}" }
+            - { name: "console-openshift-console.apps.{{ cluster_name }}.{{ cluster_domain }}", ip: "{{ cluster_baremetal_ingress_ip }}" }
+            - { name: "oauth-openshift.apps.{{ cluster_name }}.{{ cluster_domain }}", ip: "{{ cluster_baremetal_ingress_ip }}" }
+            - { name: "multicloud-console.apps.{{ cluster_name }}.{{ cluster_domain }}", ip: "{{ cluster_baremetal_ingress_ip }}" }
+
+        - name: Ensure DNS and DHCP services are enabled and running
+          service:
+            name: dnsmasq
+            state: started
             enabled: true
       become: true
       become_user: root
@@ -72,7 +146,7 @@
   # =====================
   #  2.3) Layer 4 Phase #
   # =====================
-    - name: Disable firewalld
+    - name: Disable firewalld on Bastion node
       service:
         name: firewalld
         state: stopped
@@ -87,11 +161,15 @@
     # ==================================
     # Closing the Network Requirements #
     # ==================================
-    - name: Check if reboot required
-      stat:
-        path: /var/run/reboot-required
-      register: reboot_required_file
+    - name: Close the Network requirements
+      block:
+        - name: Check if reboot required
+          stat:
+            path: /var/run/reboot-required
+          register: reboot_required_file
 
-    - name: Reboot ztp-bastion node
-      reboot:
-      when: reboot_required_file.stat.exists == true
+        - name: Reboot ztp-bastion node
+          reboot:
+          when: reboot_required_file.stat.exists == true
+      become: true
+      become_user: root

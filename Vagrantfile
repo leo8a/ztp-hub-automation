@@ -9,6 +9,23 @@ OCP_REGISTRY = "quay.io/openshift-release-dev/ocp-release"
 REFRESH_ALL = false
 ARTIFACTORY_ENABLED = false
 PULL_SECRET_PATH = "/vagrant/pull_secret.json"
+ZTP_HUB_CLUSTER_DNS = {
+        'cluster_name': 'ztp-cluster0',
+        'cluster_domain': 'leo8a.io',
+        'cluster_baremetal_cidr': '1e0:8a::/64',
+        'cluster_baremetal_api_ip': '1e0:8a::25/64',
+        'cluster_baremetal_ingress_ip': '1e0:8a::26/64'
+}
+ZTP_HUB_CLUSTER_NODES = {
+            'master-0': { 'ip': '1e0:8a::10',
+                          'mac': 'aa:aa:aa:aa:bb:01',
+                          'hostname': 'master-0.cluster.testing.home' },
+            'master-1': { 'ip': '1eo:8a::11',
+                          'mac': 'aa:aa:aa:aa:bb:02',
+                          'hostname': 'master-1.cluster.testing.home' },
+            'master-2': { 'ip': '1e0:8a::12',
+                          'mac': 'aa:aa:aa:aa:bb:03',
+                          'hostname': 'master-2.cluster.testing.home' } }
 
 
 # Define the image box
@@ -52,9 +69,14 @@ Vagrant.configure("2") do |config|
     ansible.extra_vars = {
         bastion_nic: "eth0",
         bastion_ipv6_mask: "64",
-        bastion_ipv6_ip: "cafe:8a::5",
-        bastion_ipv6_cidr: "cafe:8a::/64",
-        bastion_cluster_network: "baremetal"
+        bastion_ipv6_ip: "1e0:8a::5",
+        bastion_ipv6_cidr: "1e0:8a::/64",
+        bastion_ipv6_start: "1e0:8a::100",
+        bastion_ipv6_end: "1e0:8a::200",
+        bastion_cluster_network: "baremetal",
+        refresh_bastion_interfaces: REFRESH_ALL,
+        ztp_hub_cluster_data: ZTP_HUB_CLUSTER_DNS,
+        ztp_hub_cluster_nodes: ZTP_HUB_CLUSTER_NODES
     }
   end
 
