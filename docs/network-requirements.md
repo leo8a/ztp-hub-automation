@@ -55,20 +55,20 @@ Following an [OSI model](https://en.wikipedia.org/wiki/OSI_model) approach, netw
 
 - _Description:_ This is simply the creation of the network interface on the Bastion node connected to the baremetal network.
 
-- _Automation:_ A sample playbook to automate the configuration of the network interface can be found on `automation/network-requirements.yml`[L12-L34](https://github.com/leo8a/ztp-hub-automation/blob/main/automation/network-requirements.yml#L12-L34).
+- _Automation:_ A sample playbook to automate the configuration of the network interface can be found on `automation/network-requirements.yml`[L14-L47](../automation/network-requirements.yml#L14-L47).
 
 #### 2.2.2) Configure RaDVD and SLAAC
 
 - _Description:_ In Linux systems, IPv6 uses NA, ND, RA packets to manage the members in the network. Using RaDVD, RAs work faster and more reliably than using `dnsmasq`. Additionally, it has more flexibility with the timeouts and the desired RA’s behaviour. By contrast, the ND and NA packets will be managed by the routing equipment (disabled on `dnsmasq`). We have also disabled SLAAC in the bastion node.
 
-- _Automation:_ A sample playbook to automate the configuration of RaDVD can be found on `automation/network-requirements.yml`[L36-L48](https://github.com/leo8a/ztp-hub-automation/blob/main/automation/network-requirements.yml#L36-L48). As a validation, two pre-flight checks could be automated here.
+- _Automation:_ A sample playbook to automate the configuration of RaDVD can be found on `automation/network-requirements.yml`[L49-L65](../automation/network-requirements.yml#L49-L65). As a validation, two pre-flight checks could be automated here.
 
   - To check RA's that include the managed flag.
   - To check for valid IPv6 gateways via RAs and ensure not multiple ones.
 
 #### 2.2.3) Configure DNS, DHCP, and NTP
 
-> **Note:** For more info about the setup of the [DNS, DHCP](https://docs.openshift.com/container-platform/4.9/installing/installing_bare_metal_ipi/ipi-install-prerequisites.html#network-requirements_ipi-install-prerequisites), and [NTP](https://docs.openshift.com/container-platform/4.9/installing/installing_bare_metal_ipi/ipi-install-installation-workflow.html#configuring-ntp-for-disconnected-clusters_ipi-install-configuration-files) servers, you may check the provided links to the official documentation of Red Hat.
+> **Note:** For more info about the setup of the [DNS, DHCP](https://docs.openshift.com/container-platform/4.10/installing/installing_bare_metal_ipi/ipi-install-prerequisites.html#network-requirements_ipi-install-prerequisites), and [NTP](https://docs.openshift.com/container-platform/4.10/installing/installing_bare_metal_ipi/ipi-install-installation-workflow.html#configuring-ntp-for-disconnected-clusters_ipi-install-configuration-files) servers, you may check the provided links to the official documentation of Red Hat.
 
 - _Description:_ These services should be running on the bastion node serving local clients on the **baremetal** networks. The corresponding subsections can be found below:
 
@@ -76,7 +76,7 @@ Following an [OSI model](https://en.wikipedia.org/wiki/OSI_model) approach, netw
     - Dynamic Host Configuration Protocol (DHCP) requirements
     - Network Time Protocol (NTP)
 
-- _Automation:_ A sample playbook to automate the installation and configuration of the DNS, DHCP services (via `dnsmasq`), and the NTP services on the Bastion node can be found on `automation/services-requirements.yml`[L52-L97](https://github.com/leo8a/ztp-hub-automation/blob/main/automation/network-requirements.yml#L52-L97). As you can see, we have divided this ansible block into three tasks, one for the NTP service using chrony [L53-L67](https://github.com/leo8a/ztp-hub-automation/blob/main/automation/network-requirements.yml#L53-L67), and another for the DNS and DHCP services using dnsmasq [L69-L97](https://github.com/leo8a/ztp-hub-automation/blob/main/automation/network-requirements.yml#L69-L97).
+- _Automation:_ A sample playbook to automate the installation and configuration of the DNS, DHCP services (via `dnsmasq`), and the NTP services on the Bastion node can be found on `automation/services-requirements.yml`[L67-L143](../automation/network-requirements.yml#L67-L143). As you can see, we have divided this ansible block into two tasks, one for the NTP service using chrony [L68-L84](../automation/network-requirements.yml#L68-L84), and another for the DNS and DHCP services using dnsmasq [L115-L141](https://github.com/leo8a/ztp-hub-automation/blob/main/automation/network-requirements.yml#L115-L141).
 
 ### 2.3) Layer 4 Phase (optional)
 
