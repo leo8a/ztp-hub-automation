@@ -30,7 +30,7 @@ To fulfil the node requirements for an initial ZTP Hub cluster, two phases with 
 
 - _Description:_ **The OS assumed on the Bastion node is RHEL 8.4.** In this step, we install the software required for the automation of the initial ZTP Hub cluster. For instance, `Libvirtd` is needed for the Bootstrap VM (which is triggered by the OCP IPI installer). OpenShift client (`oc`) and installer (`openshift-baremetal-install`) will be needed for installation and daily basis work with the different clusters. The rest of desirable software is necessary for debugging and the container image synchronization.
 
-- _Automation:_ A sample playbook to automate the bootstrapping of the bastion node can be found on `automation/node-requirements.yml`[L15-L43](https://github.com/leo8a/ztp-hub-automation/blob/main/automation/node-requirements.yml#L15-L43). As you can see, we have separated this ansible block into two tasks, one for the required software dependencies [L18-L29](https://github.com/leo8a/ztp-hub-automation/blob/main/automation/node-requirements.yml#L18-L29), and another for the nice-to-have tools [L31-L41](https://github.com/leo8a/ztp-hub-automation/blob/main/automation/node-requirements.yml#L31-L41).
+- _Automation:_ A sample playbook to automate the bootstrapping of the bastion node can be found on `automation/node-requirements.yml`[L15-L43](../automation/node-requirements.yml#L15-L43). As you can see, we have separated this ansible block into two tasks, one for the required software dependencies [L18-L31](../automation/node-requirements.yml#L18-L31), and another for the nice-to-have tools [L33-L43](../automation/node-requirements.yml#L33-L43).
 
 ### 1.2.2) Configure Kernel parameters
 
@@ -38,6 +38,6 @@ To fulfil the node requirements for an initial ZTP Hub cluster, two phases with 
 
 - _Automation:_ A sample playbook to automate the configuration of the required kernel flags on the bastion node can be found on `automation/node-requirements.yml`[L100-L137](https://github.com/leo8a/ztp-hub-automation/blob/main/automation/node-requirements.yml#L100-L137). It is worth to highlight that, below flags are going to most important for the deployment phases later on:
 
-    - [net.ipv6.conf.all.accept_ra](https://github.com/leo8a/ztp-hub-automation/blob/main/automation/node-requirements.yml#L103)
+    - [net.ipv6.conf.all.accept_ra](../automation/node-requirements.yml#L103)
 
-    - [net.ipv6.conf.all.forwarding](https://github.com/leo8a/ztp-hub-automation/blob/main/automation/node-requirements.yml#L109)
+    - [net.ipv6.conf.all.forwarding](../automation/node-requirements.yml#L109)
