@@ -57,7 +57,7 @@ Following an [OSI model](https://en.wikipedia.org/wiki/OSI_model) approach, netw
 
 - _Automation:_ A sample playbook to automate the configuration of the network interface can be found on `automation/network-requirements.yml`[L14-L47](../automation/network-requirements.yml#L14-L47).
 
-#### 2.2.2) Configure RaDVD and SLAAC
+#### 2.2.2) Configure [RaDVD](https://en.wikipedia.org/wiki/Radvd) and [SLAAC](https://www.networkacademy.io/ccna/ipv6/stateless-address-autoconfiguration-slaac)
 
 - _Description:_ In Linux systems, IPv6 uses NA, ND, RA packets to manage the members in the network. Using RaDVD, RAs work faster and more reliably than using `dnsmasq`. Additionally, it has more flexibility with the timeouts and the desired RA’s behaviour. By contrast, the ND and NA packets will be managed by the routing equipment (disabled on `dnsmasq`). We have also disabled SLAAC in the bastion node.
 
